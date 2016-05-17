@@ -110,6 +110,27 @@ module Rack
       body    = target_response.body || [""]
       body    = [body] unless body.respond_to?(:each)
 
+      # This is here because the DCM5 controllers don't return
+      # proper HTTP responses from calls to the /taco.cgi URL when the
+      # F0=AV params are passed causing issues in numerous parts of the
+      # HTTP code
+      # p target_response.to_hash
+      if headers.keys.first.match(/\A(?:\s|\d)/)
+        lines = [].tap do |lines|
+          target_response.original_headers.each do |k,v|
+            if k.match(/\A0/)
+              lines << " #{k}:#{v.join('')}"
+            else
+              lines << k
+            end
+          end
+        end
+
+        body = [lines.join("\n")]
+        headers = {}
+      end
+      # end DCM5 hack
+
       [target_response.code, headers, body]
     end
 
