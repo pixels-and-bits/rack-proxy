@@ -129,6 +129,14 @@ module Rack
         body = [lines.join("\n")]
         headers = {}
       end
+
+      if (js = body[0].to_s).match('jload.js')
+        js.sub!('ID=window.setTimeout("Update();",2000)', 'window.onload = Update')
+        js.sub!('ID=window.setTimeout("Update();",2000);', '')
+        js.sub!('{viewer();}', '{viewer();ID=window.setTimeout("Update();",2000);}')
+
+        body[0] = js
+      end
       # end DCM5 hack
 
       [target_response.code, headers, body]
