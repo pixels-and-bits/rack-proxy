@@ -139,6 +139,11 @@ module Rack
       end
       # end DCM5 hack
 
+      # This is here because Aegis controllers are setting Cache-Control
+      # which breaks all the other controllers
+      headers.delete("cache-control")
+      # end Aegis hack
+
       [target_response.code, headers, body]
     end
 
