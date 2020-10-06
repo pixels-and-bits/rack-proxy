@@ -7,6 +7,7 @@ module Rack
     attr_accessor :use_ssl
     attr_accessor :verify_mode
     attr_accessor :read_timeout
+    attr_accessor :ssl_version
 
     def initialize(request, host, port = nil)
       @request, @host, @port = request, host, port
@@ -37,6 +38,7 @@ module Rack
       response.read_body(&block)
     ensure
       session.end_request_hacked
+      session.finish
     end
 
     def to_s
@@ -65,6 +67,7 @@ module Rack
         http.use_ssl = self.use_ssl
         http.verify_mode = self.verify_mode
         http.read_timeout = self.read_timeout
+        http.ssl_version = self.ssl_version if self.use_ssl
         http.start
       end
     end

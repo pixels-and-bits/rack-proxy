@@ -5,12 +5,12 @@ module Rack
 
   # Subclass and bring your own #rewrite_request and #rewrite_response
   class Proxy
-    VERSION = "0.5.18"
+    VERSION = "0.6.5"
 
     class << self
       def extract_http_request_headers(env)
         headers = env.reject do |k, v|
-          !(/^HTTP_[A-Z_]+$/ === k) || v.nil?
+          !(/^HTTP_[A-Z0-9_]+$/ === k) || v.nil?
         end.map do |k, v|
           [reconstruct_header_name(k), v]
         end.inject(Utils::HeaderHash.new) do |hash, k_v|
@@ -39,11 +39,18 @@ module Rack
     end
 
     # @option opts [String, URI::HTTP] :backend Backend host to proxy requests to
-    def initialize(opts = {})
+    def initialize(app = nil, opts= {})
+      if app.is_a?(Hash)
+        opts = app
+        @app = nil
+      else
+        @app = app
+      end
       @streaming = opts.fetch(:streaming, true)
       @ssl_verify_none = opts.fetch(:ssl_verify_none, false)
       @backend = URI(opts[:backend]) if opts[:backend]
       @read_timeout = opts.fetch(:read_timeout, 60)
+      @ssl_version = opts[:ssl_version] if opts[:ssl_version]
     end
 
     def call(env)
@@ -97,16 +104,20 @@ module Rack
         target_response.use_ssl = use_ssl
         target_response.read_timeout = read_timeout
         target_response.verify_mode = OpenSSL::SSL::VERIFY_NONE if use_ssl && ssl_verify_none
+        target_response.ssl_version = @ssl_version if @ssl_version
       else
-        start_opts = use_ssl ? {:use_ssl => use_ssl} : {}
-        start_opts[:verify_mode] = OpenSSL::SSL::VERIFY_NONE if use_ssl && ssl_verify_none
-        start_opts[:read_timeout] = read_timeout
-        target_response = Net::HTTP.start(backend.host, backend.port, start_opts) do |http|
+        http = Net::HTTP.new(backend.host, backend.port)
+        http.use_ssl = use_ssl if use_ssl
+        http.read_timeout = read_timeout
+        http.verify_mode = OpenSSL::SSL::VERIFY_NONE if use_ssl && ssl_verify_none
+        http.ssl_version = @ssl_version if @ssl_version
+
+        target_response = http.start do
           http.request(target_request)
         end
       end
 
-      headers = (target_response.respond_to?(:headers) && target_response.headers) || self.class.normalize_headers(target_response.to_hash)
+      headers = self.class.normalize_headers(target_response.respond_to?(:headers) ? target_response.headers : target_response.to_hash)
       body    = target_response.body || [""]
       body    = [body] unless body.respond_to?(:each)
 
@@ -139,11 +150,9 @@ module Rack
       end
       # end DCM5 hack
 
-      # This is here because Aegis controllers are setting Cache-Control
-      # which breaks all the other controllers
-      headers.delete("cache-control")
-      # end Aegis hack
-
+      # According to https://tools.ietf.org/html/draft-ietf-httpbis-p1-messaging-14#section-7.1.3.1Acc
+      # should remove hop-by-hop header fields
+      headers.reject! { |k| ['cache-control', 'connection', 'keep-alive', 'proxy-authenticate', 'proxy-authorization', 'te', 'trailer', 'transfer-encoding', 'upgrade'].include? k.downcase }
       [target_response.code, headers, body]
     end
 
